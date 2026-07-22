@@ -200,9 +200,81 @@ class OrderControllerTest {
     String source = new String(sourceBytes, StandardCharsets.UTF_8);
     assertThat(source)
         .contains("data:image/svg+xml")
-        .contains("cover: bookCovers.zh")
-        .contains("cover: bookCovers.en")
+        .contains("colorful: createThemeBookCovers(BOOK_COVER_PALETTES.colorful)")
+        .contains("white: createThemeBookCovers(BOOK_COVER_PALETTES.white)")
+        .contains("cover: bookCovers.colorful.zh")
+        .contains("cover: bookCovers.colorful.en")
+        .contains("bookCovers[normalizedTheme]?.[lang]")
+        .contains("window.history.replaceState(window.history.state || {}, '', url)")
         .doesNotContain("cover: 'assets/observability-engineering-");
+  }
+
+  @Test
+  void storefrontUsesSingleProductRoutesAndBagContract() throws Exception {
+    String shopSource;
+    try (var source = getClass().getResourceAsStream("/static/shop.html")) {
+      assertThat(source).isNotNull();
+      shopSource = new String(source.readAllBytes(), StandardCharsets.UTF_8);
+    }
+
+    String storefrontStyles;
+    try (var source = getClass().getResourceAsStream("/static/assets/storefront.css")) {
+      assertThat(source).isNotNull();
+      storefrontStyles = new String(source.readAllBytes(), StandardCharsets.UTF_8);
+    }
+
+    String businessSource;
+    try (var source = getClass().getResourceAsStream("/static/business.html")) {
+      assertThat(source).isNotNull();
+      businessSource = new String(source.readAllBytes(), StandardCharsets.UTF_8);
+    }
+
+    assertThat(shopSource)
+        .contains("const STORE_PAGES = new Set(['home', 'detail', 'purchase'])")
+        .contains("const LEGACY_STORE_PAGE_ALIASES = Object.freeze({ categories: 'home', technology: 'detail' })")
+        .contains("data-store-panel=\"home\"")
+        .contains("data-store-panel=\"detail\"")
+        .contains("data-store-panel=\"purchase\"")
+        .contains("id=\"bagEmpty\"")
+        .contains("id=\"bagFilled\"")
+        .contains("id=\"cartBadge\"")
+        .contains("data-store-action=\"add-to-bag\"")
+        .contains("data-store-action=\"remove-from-bag\"")
+        .contains("id=\"submitBtn\"")
+        .contains("id=\"trafficBtn\"")
+        .contains("id=\"phoneToast\"")
+        .contains("data-demo-theme=\"colorful\"")
+        .contains("data-demo-theme=\"white\"")
+        .contains("window.history.back()")
+        .contains("'touchstart', handleSwipeBackStart")
+        .contains("'touchend', handleSwipeBackEnd")
+        .contains("goBackStorePage('mobile_swipe_back')")
+        .doesNotContain("data-store-back")
+        .doesNotContain("class=\"page-back\"")
+        .doesNotContain("data-store-route=\"categories\"")
+        .doesNotContain("data-store-route=\"technology\"")
+        .doesNotContain("class=\"search\"")
+        .doesNotContain("category-card");
+
+    assertThat(storefrontStyles)
+        .contains("background: #fff2f0")
+        .contains("box-shadow: none !important")
+        .contains(":root[data-demo-theme=\"white\"]")
+        .contains("height: 100dvh;")
+        .contains("grid-template-rows: auto minmax(0, 1fr);")
+        .contains("overflow-y: auto;")
+        .contains("overscroll-behavior-y: contain;")
+        .contains("z-index: 30;")
+        .contains("min-height: 58px;")
+        .contains("\"brand theme\"")
+        .contains("\"nav nav\"")
+        .doesNotContain("position: sticky;")
+        .doesNotContain(".storefront .page-back");
+
+    assertThat(businessSource)
+        .contains("20260722-storefront-v29")
+        .contains(".preview-stage[data-view=\"mobile\"] .phone-statusbar")
+        .contains("background: #ffffff;");
   }
 
   @Test
@@ -212,16 +284,17 @@ class OrderControllerTest {
     demoMvc
         .perform(get("/api/demo/config"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.controlTokenRequired").value(true))
+        .andExpect(jsonPath("$.controlTokenRequired").doesNotExist())
         .andExpect(jsonPath("$.rumEnabled").value(true))
         .andExpect(jsonPath("$.project").value("mall-demo"))
-        .andExpect(jsonPath("$.observabilityConsoleUrl").doesNotExist())
+        .andExpect(jsonPath("$.datakitProvider").value("guance"))
+        .andExpect(jsonPath("$.observabilityConsoleUrl").value("https://console.guance.com"))
         .andExpect(jsonPath("$.workspaceId").doesNotExist())
         .andExpect(jsonPath("$.controlToken").doesNotExist());
   }
 
   @Test
-  void publicConfigUsesTrueWatchAp1ConsoleWhenWorkspaceIsConfigured() throws Exception {
+  void publicConfigUsesProviderDefaultConsoleWhenWorkspaceIsConfigured() throws Exception {
     MockMvc demoMvc =
         MockMvcBuilders.standaloneSetup(
                 newDemoController(
@@ -229,13 +302,15 @@ class OrderControllerTest {
                     "test",
                     "1.0.0",
                     "mall-h5",
-                    "https://ap1-console.truewatch.com/",
+                    "truewatch",
+                    "",
                     "workspace-demo"))
             .build();
 
     demoMvc
         .perform(get("/api/demo/config"))
         .andExpect(status().isOk())
+        .andExpect(jsonPath("$.datakitProvider").value("truewatch"))
         .andExpect(
             jsonPath("$.observabilityConsoleUrl").value("https://ap1-console.truewatch.com"))
         .andExpect(jsonPath("$.workspaceId").value("workspace-demo"));
@@ -267,7 +342,6 @@ class OrderControllerTest {
     demoMvc
         .perform(
             post("/api/demo/faults/inventory_redis_timeout/enable")
-                .header("X-Demo-Control-Token", "demo-token")
                 .header("X-Demo-Language", "en"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.scenario.id").value("inventory_redis_timeout"))
@@ -282,18 +356,18 @@ class OrderControllerTest {
   }
 
   @Test
-  void faultControlsRequireSharedToken() throws Exception {
+  void faultControlsAndWarmupDoNotRequireCredentials() throws Exception {
     MockMvc demoMvc =
         MockMvcBuilders.standaloneSetup(newDemoController(new RecordingRestTemplate())).build();
 
     demoMvc
         .perform(post("/api/demo/faults/payment_error/enable"))
-        .andExpect(status().isUnauthorized());
+        .andExpect(status().isOk());
     demoMvc
-        .perform(post("/api/demo/faults/off").header("X-Demo-Control-Token", "wrong-token"))
-        .andExpect(status().isUnauthorized());
+        .perform(post("/api/demo/faults/off"))
+        .andExpect(status().isOk());
     demoMvc
-        .perform(post("/api/demo/warmup").header("X-Demo-Control-Token", "demo-token"))
+        .perform(post("/api/demo/warmup"))
         .andExpect(status().isOk());
   }
 
@@ -381,7 +455,8 @@ class OrderControllerTest {
         rumEnv,
         rumVersion,
         rumService,
-        "https://ap1-console.truewatch.com",
+        "guance",
+        "",
         "");
   }
 
@@ -390,6 +465,7 @@ class OrderControllerTest {
       String rumEnv,
       String rumVersion,
       String rumService,
+      String datakitProvider,
       String consoleUrl,
       String workspaceId) {
     return new DemoController(
@@ -397,7 +473,6 @@ class OrderControllerTest {
         "http://order-service.test",
         "http://inventory-service.test",
         "http://payment-service.test",
-        "demo-token",
         "mall-demo",
         true,
         "order_web_docker_demo",
@@ -405,6 +480,7 @@ class OrderControllerTest {
         rumEnv,
         rumVersion,
         rumService,
+        datakitProvider,
         consoleUrl,
         workspaceId,
         tempDir.toString(),

@@ -2,13 +2,8 @@
 set -euo pipefail
 
 base_url="${DEMO_BASE_URL:-http://127.0.0.1:8080}"
-control_token="${DEMO_CONTROL_TOKEN:-}"
 expected_project="${DEMO_PROJECT:-mall-demo}"
-
-if [[ -z "${control_token}" ]]; then
-  echo "DEMO_CONTROL_TOKEN is required" >&2
-  exit 2
-fi
+expected_provider="${DATAKIT_PROVIDER:-guance}"
 
 expect_status() {
   local expected="$1"
@@ -24,22 +19,22 @@ expect_status() {
 expect_status 200 "${base_url}/actuator/health"
 expect_status 200 "${base_url}/api/demo/config"
 grep -Fq "\"project\":\"${expected_project}\"" /tmp/observability-demo-response
+grep -Fq "\"datakitProvider\":\"${expected_provider}\"" /tmp/observability-demo-response
+if grep -Fq 'controlToken' /tmp/observability-demo-response; then
+  echo "demo config must not expose or require a control token" >&2
+  exit 1
+fi
 expect_status 200 "${base_url}/api/demo/rum-config"
 grep -Fq "\"project\":\"${expected_project}\"" /tmp/observability-demo-response
 expect_status 200 "${base_url}/api/orders/demo" \
   -H 'X-Key-Request: smoke_checkout' \
   -H "X-Business-Request-Id: biz-smoke-$(date +%s)"
 expect_status 404 -X POST "${base_url}/admin/fault/off"
-expect_status 401 -X POST "${base_url}/api/demo/faults/payment_error/enable"
-expect_status 200 -X POST \
-  -H "X-Demo-Control-Token: ${control_token}" \
-  "${base_url}/api/demo/faults/payment_error/enable"
+expect_status 200 -X POST "${base_url}/api/demo/faults/payment_error/enable"
 expect_status 503 "${base_url}/api/orders/demo" \
   -H 'X-Key-Request: smoke_fault_checkout' \
   -H "X-Business-Request-Id: biz-smoke-fault-$(date +%s)"
-expect_status 200 -X POST \
-  -H "X-Demo-Control-Token: ${control_token}" \
-  "${base_url}/api/demo/faults/off"
+expect_status 200 -X POST "${base_url}/api/demo/faults/off"
 
 recovery_request_id="biz-smoke-recovery-$(date +%s)"
 expect_status 200 "${base_url}/api/orders/demo" \

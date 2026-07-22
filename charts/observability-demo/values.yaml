@@ -10,18 +10,22 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
-# Leave empty to let Helm generate release-scoped demo credentials. Set this to
-# the name of a pre-created Secret to manage credentials outside this chart.
+# Leave empty to let Helm generate release-scoped MySQL credentials. Set this
+# to the name of a pre-created Secret to manage them outside this chart.
 existingSecret: ""
 secretKeys:
   mysqlPassword: mysql-password
   mysqlRootPassword: mysql-root-password
-  controlToken: demo-control-token
 
 environment: demo
 
 observability:
   project: mall-demo
+
+# This labels which platform the connected DataKit writes to and selects the
+# default console deep-link domain. DataKit's dataway_url must match it.
+datakit:
+  provider: guance
 
 # ClusterIP is portable across Kind, EKS and kubeadm. The EKS workshop uses
 # values-eks.yaml to expose only the Gateway through an AWS load balancer.
@@ -44,7 +48,8 @@ rum:
   service: mall-h5
 
 observabilityConsole:
-  url: https://ap1-console.truewatch.com
+  # Empty uses the provider default (Guance or TrueWatch). Set a URL to override it.
+  url: ""
   workspaceId: ""
 
 logViewer:

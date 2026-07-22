@@ -6,7 +6,6 @@
 - `POST /api/demo/faults/off`
 - `POST /api/demo/warmup`
 
-三者都必须携带 `X-Demo-Control-Token`。后端故障有 TTL，并可显式恢复。
 
 | scenarioId | 层级 | 目标 | 预期观察 |
 | --- | --- | --- | --- |
@@ -22,7 +21,6 @@
 示例：
 
 ```bash
-export DEMO_CONTROL_TOKEN='你的控制口令'
 scripts/inject-fault.sh inventory_redis_timeout
 scripts/generate-traffic.sh
 scripts/inject-fault.sh off

@@ -15,13 +15,10 @@ Then visit http://127.0.0.1:8080/ . MySQL and Redis use emptyDir and are intenti
 {{- end }}
 
 {{- if not .Values.existingSecret }}
-Helm generated the MySQL credentials and demo control token in Secret
+Helm generated the MySQL credentials in Secret
 {{ include "observability-demo.secretName" . }}. Existing values are preserved on upgrade.
 {{- else }}
 The demo is using the pre-created Secret {{ include "observability-demo.secretName" . }}.
 {{- end }}
 
-Print the control token when the web page asks for it:
-
-  printf '%s\n' "$(kubectl -n {{ .Release.Namespace }} get secret {{ include "observability-demo.secretName" . }} \
-    -o jsonpath='{.data.{{ .Values.secretKeys.controlToken }}}' | base64 --decode)"
+Fault injection, recovery, and warm-up operations do not require a demo credential.

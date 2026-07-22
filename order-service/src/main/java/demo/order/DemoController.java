@@ -1,11 +1,10 @@
 package demo.order;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,7 +16,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -126,7 +124,6 @@ class DemoController {
   private final String orderUrl;
   private final String inventoryUrl;
   private final String paymentUrl;
-  private final String demoControlToken;
   private final String project;
   private final boolean rumEnabled;
   private final String rumApplicationId;
@@ -134,6 +131,7 @@ class DemoController {
   private final String rumEnv;
   private final String rumVersion;
   private final String rumService;
+  private final String datakitProvider;
   private final String observabilityConsoleUrl;
   private final String observabilityWorkspaceId;
   private final boolean kubernetesLogReaderEnabled;
@@ -144,7 +142,6 @@ class DemoController {
       @Value("${order.url:http://127.0.0.1:8080}") String orderUrl,
       @Value("${inventory.url:http://127.0.0.1:8081}") String inventoryUrl,
       @Value("${payment.url:http://127.0.0.1:8082}") String paymentUrl,
-      @Value("${demo.control-token:}") String demoControlToken,
       @Value("${demo.project:mall-demo}") String project,
       @Value("${rum.enabled:false}") boolean rumEnabled,
       @Value("${rum.application-id:}") String rumApplicationId,
@@ -152,8 +149,8 @@ class DemoController {
       @Value("${rum.env:${DD_ENV:demo}}") String rumEnv,
       @Value("${rum.version:${DD_VERSION:1.0.0}}") String rumVersion,
       @Value("${rum.service:mall-h5}") String rumService,
-      @Value("${demo.observability-console-url:https://ap1-console.truewatch.com}")
-          String observabilityConsoleUrl,
+      @Value("${demo.datakit-provider:guance}") String datakitProvider,
+      @Value("${demo.observability-console-url:}") String observabilityConsoleUrl,
       @Value("${demo.observability-workspace-id:}") String observabilityWorkspaceId,
       @Value("${demo.log-directory:/var/log/observability-demo}") String logDirectory,
       @Value("${demo.kubernetes-log-reader.enabled:true}") boolean kubernetesLogReaderEnabled,
@@ -163,7 +160,6 @@ class DemoController {
     this.orderUrl = orderUrl;
     this.inventoryUrl = inventoryUrl;
     this.paymentUrl = paymentUrl;
-    this.demoControlToken = demoControlToken == null ? "" : demoControlToken;
     this.project = defaultIfBlank(project, "mall-demo");
     this.rumApplicationId = rumApplicationId == null ? "" : rumApplicationId.trim();
     this.rumEnabled = rumEnabled && !this.rumApplicationId.isBlank();
@@ -171,9 +167,10 @@ class DemoController {
     this.rumEnv = defaultIfBlank(rumEnv, "demo");
     this.rumVersion = defaultIfBlank(rumVersion, "1.0.0");
     this.rumService = defaultIfBlank(rumService, "mall-h5");
+    this.datakitProvider = normalizeDatakitProvider(datakitProvider);
     this.observabilityConsoleUrl =
         trimTrailingSlash(
-            defaultIfBlank(observabilityConsoleUrl, "https://ap1-console.truewatch.com"));
+            defaultIfBlank(observabilityConsoleUrl, defaultConsoleUrl(this.datakitProvider)));
     this.observabilityWorkspaceId =
         observabilityWorkspaceId == null ? "" : observabilityWorkspaceId.trim();
     this.kubernetesLogReaderEnabled = kubernetesLogReaderEnabled;
@@ -190,10 +187,10 @@ class DemoController {
     response.put("rumEnabled", rumEnabled);
     response.put("logViewerEnabled", true);
     response.put("kubernetesLogReaderEnabled", kubernetesLogReaderEnabled);
-    response.put("controlTokenRequired", true);
     response.put("project", project);
+    response.put("datakitProvider", datakitProvider);
+    response.put("observabilityConsoleUrl", observabilityConsoleUrl);
     if (!observabilityWorkspaceId.isBlank()) {
-      response.put("observabilityConsoleUrl", observabilityConsoleUrl);
       response.put("workspaceId", observabilityWorkspaceId);
     }
     return response;
@@ -245,10 +242,7 @@ class DemoController {
   }
 
   @PostMapping("/faults/{scenarioId}/enable")
-  Map<String, Object> enableFaultScenario(
-      @PathVariable("scenarioId") String scenarioId,
-      @RequestHeader(name = "X-Demo-Control-Token", required = false) String controlToken) {
-    requireControlToken(controlToken);
+  Map<String, Object> enableFaultScenario(@PathVariable("scenarioId") String scenarioId) {
     FaultScenario scenario = faultScenario(scenarioId);
     Map<String, Object> response = new LinkedHashMap<>();
     response.put("scenario", scenario.toMap());
@@ -272,9 +266,7 @@ class DemoController {
   }
 
   @PostMapping("/faults/off")
-  Map<String, Object> disableAllFaults(
-      @RequestHeader(name = "X-Demo-Control-Token", required = false) String controlToken) {
-    requireControlToken(controlToken);
+  Map<String, Object> disableAllFaults() {
     Map<String, Object> response = new LinkedHashMap<>();
     response.put("timestamp", Instant.now().toString());
     response.put("results", disableBackendFaults());
@@ -326,10 +318,7 @@ class DemoController {
   }
 
   @PostMapping("/warmup")
-  Map<String, Object> warmup(
-      @RequestParam(name = "count", defaultValue = "3") int count,
-      @RequestHeader(name = "X-Demo-Control-Token", required = false) String controlToken) {
-    requireControlToken(controlToken);
+  Map<String, Object> warmup(@RequestParam(name = "count", defaultValue = "3") int count) {
     int safeCount = Math.max(1, Math.min(count, 20));
     Map<String, Object> response = new LinkedHashMap<>();
     response.put("count", safeCount);
@@ -418,17 +407,19 @@ class DemoController {
     needles.add(trimmed);
   }
 
-  private void requireControlToken(String presentedToken) {
-    if (demoControlToken.isBlank()) {
-      throw new ResponseStatusException(
-          HttpStatus.SERVICE_UNAVAILABLE, "demo control token is not configured");
+  private String normalizeDatakitProvider(String provider) {
+    String normalized = defaultIfBlank(provider, "guance").trim().toLowerCase(Locale.ROOT);
+    if (!normalized.equals("guance") && !normalized.equals("truewatch")) {
+      throw new IllegalArgumentException(
+          "demo.datakit-provider must be either guance or truewatch");
     }
-    byte[] expected = demoControlToken.getBytes(StandardCharsets.UTF_8);
-    byte[] presented =
-        (presentedToken == null ? "" : presentedToken).getBytes(StandardCharsets.UTF_8);
-    if (!MessageDigest.isEqual(expected, presented)) {
-      throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid demo control token");
-    }
+    return normalized;
+  }
+
+  private String defaultConsoleUrl(String provider) {
+    return provider.equals("truewatch")
+        ? "https://ap1-console.truewatch.com"
+        : "https://console.guance.com";
   }
 
   private String trimTrailingSlash(String value) {

@@ -2,7 +2,7 @@
 
 > A clean, deliberately faultable Java microservice demo for Kubernetes and DataKit. It demonstrates correlated infrastructure metrics, APM, logs, JVM metrics, profiling, RUM, Browser Logs, Session Replay and SourceMap restoration.
 
-这是一个可公开发布、可逐步教学的全栈可观测 Demo。商城请求经过 `gateway → order → MySQL → inventory → Redis → payment`，并提供受口令保护的前端、服务、依赖和 JVM 故障场景。指标、链路、日志、JVM、Profile 与 RUM 默认统一使用 `project=mall-demo`；默认配置不包含任何真实凭证，Ingress 与 RUM 默认关闭，MySQL/Redis 数据为临时 Demo 数据。
+这是一个可公开发布、可逐步教学的全栈可观测 Demo。商城请求经过 `gateway → order → MySQL → inventory → Redis → payment`，并提供前端、服务、依赖和 JVM 故障场景。指标、链路、日志、JVM、Profile 与 RUM 默认统一使用 `project=mall-demo`；故障操作无需演示凭证，Ingress 与 RUM 默认关闭，MySQL/Redis 数据为临时 Demo 数据。
 
 ## 架构
 
@@ -30,15 +30,14 @@ flowchart LR
 
 ```bash
 cp .env.example .env
-# 修改 .env 中三个 change-me 值
+# 修改 .env 中两个 change-me 密码
 docker compose up --build -d
 open http://127.0.0.1:8080
 ```
 
-只暴露 Gateway 的 `8080` 端口。首次注入或恢复故障时，页面会提示输入 `DEMO_CONTROL_TOKEN`；该值只保存在当前标签页的 `sessionStorage`。
+只暴露 Gateway 的 `8080` 端口。故障注入、恢复和预热不要求控制口令。
 
 ```bash
-export DEMO_CONTROL_TOKEN='与 .env 一致的值'
 scripts/smoke-test.sh
 scripts/generate-traffic.sh
 scripts/inject-fault.sh payment_slow
@@ -47,6 +46,20 @@ docker compose down --volumes
 ```
 
 如果主机已有 DataKit，将 `.env` 中 `DATAKIT_HOST` 设置为容器可访问的地址；不配置 DataKit 也可以预览业务和故障控制。
+
+如果 DataKit 本身也运行在 Docker 中，推荐让 Java 服务直接加入 DataKit 所在的外部网络，避免链路、JVM 指标、Profile 和 RUM 数据绕行宿主机端口。假设 DataKit 容器名为 `datakit-docker-demo`、网络名为 `datakit-demo-net`：
+
+```bash
+# .env
+DATAKIT_HOST=datakit-docker-demo
+DATAKIT_DOCKER_NETWORK=datakit-demo-net
+
+docker compose -f compose.yaml -f compose.datakit.yaml up --build -d
+```
+
+DataKit 需要开启 `container`、`ddtrace`、`statsd` 和 `profile` inputs，并挂载 Docker Socket 才能同时采集容器指标和 stdout 日志。Compose 已通过每个 Java 容器的 `datakit_logs_config` 将日志统一归类到 `source=java_selfheal_demo`，同时保留各自的 `service`。`compose.datakit.yaml` 只接入已有 DataKit，不会新建或修改 DataKit 容器。
+
+通过 `.env` 的 `DATAKIT_PROVIDER=guance|truewatch` 指明 DataKit 对接的平台。页面右上角会显示 `DataKit → Guance` 或 `DataKit → TrueWatch`，Trace 深链也会自动选择默认域名：Guance 使用 `https://console.guance.com/`，TrueWatch 使用 `https://ap1-console.truewatch.com/`。如需私有化或其他站点，可用 `OBSERVABILITY_CONSOLE_URL` 覆盖。注意，这个变量负责 Demo 的展示和深链；DataKit 实际上报目标仍由 DataKit 自己的 `dataway_url` 决定，两者应保持一致。
 
 ## EKS Workshop：分步安装 DataKit 与 Demo
 
@@ -66,7 +79,8 @@ read -rsp 'DataWay URL: ' DATAWAY_URL && export DATAWAY_URL && echo
 # RUM Application ID 非敏感，不需要填写 Public DataWay client token。
 read -rp 'RUM Application ID: ' RUM_APPLICATION_ID && export RUM_APPLICATION_ID
 
-read -rp 'TrueWatch Workspace ID: ' TRUEWATCH_WORKSPACE_ID && export TRUEWATCH_WORKSPACE_ID
+export DATAKIT_PROVIDER="guance" # 可选值：guance、truewatch
+read -rp 'Workspace ID: ' OBSERVABILITY_WORKSPACE_ID && export OBSERVABILITY_WORKSPACE_ID
 ```
 
 `project=mall-demo`、镜像标签 `latest`、DataKit namespace `datakit` 和应用 namespace `observability-demo` 是 Demo 固定值，不需要用户声明。
@@ -127,16 +141,17 @@ helm upgrade --install demo charts/observability-demo \
   -f charts/observability-demo/values-eks.yaml \
   --set rum.enabled=true \
   --set-string rum.applicationId="$RUM_APPLICATION_ID" \
-  --set-string observabilityConsole.workspaceId="$TRUEWATCH_WORKSPACE_ID"
+  --set-string datakit.provider="$DATAKIT_PROVIDER" \
+  --set-string observabilityConsole.workspaceId="$OBSERVABILITY_WORKSPACE_ID"
 
-unset RUM_APPLICATION_ID TRUEWATCH_WORKSPACE_ID
+unset RUM_APPLICATION_ID OBSERVABILITY_WORKSPACE_ID
 
 for deployment in $(kubectl -n observability-demo get deployments -o name); do
   kubectl -n observability-demo rollout status "$deployment" --timeout=8m
 done
 ```
 
-Chart 会在 `demo-observability-demo` Secret 中自动生成 Demo 内部密码和故障控制口令。
+Chart 会在 `demo-observability-demo` Secret 中自动生成 Demo 内部 MySQL 密码。
 
 Chart 默认拉取 `ghcr.io/truewatchtech/observability-demo-{gateway,order,inventory,payment}-service:latest`，并使用 `imagePullPolicy: Always`。四个 GHCR Package 均为 Public，最终用户不需要执行 `docker login`。
 
@@ -161,21 +176,9 @@ echo "$DEMO_BASE_URL"
 
 这是 AWS 自动分配的公网 DNS，不要求提前购买或配置自有域名。该 Load Balancer 会产生 AWS 费用；Workshop 结束后应卸载应用。Java 容器使用 UID `10001`、只读根文件系统和最小权限 ServiceAccount；MySQL/Redis 使用 `emptyDir`，不适合保存生产数据。
 
-### 5. 获取控制口令、验证并生成演示流量
-
-网页首次执行故障操作时会要求输入控制口令。输出自动生成的值并复制到页面：
+### 5. 验证并生成演示流量
 
 ```bash
-printf '%s\n' "$(kubectl -n observability-demo get secret demo-observability-demo \
-  -o jsonpath='{.data.demo-control-token}' | base64 --decode)"
-```
-
-脚本验证使用同一个口令：
-
-```bash
-export DEMO_CONTROL_TOKEN="$(kubectl -n observability-demo get secret demo-observability-demo \
-  -o jsonpath='{.data.demo-control-token}' | base64 --decode)"
-
 scripts/smoke-test.sh
 scripts/generate-traffic.sh
 scripts/inject-fault.sh payment_slow
@@ -222,8 +225,9 @@ scripts/install-obs-agent-eks-node-demo.sh --cleanup
 - DataWay URL：敏感，只通过 DataKit 安装环境传入。
 - RUM application ID：非敏感，但必须先在可观测平台创建；默认 `RUM_ENABLED=false`。
 - project：非敏感，默认 `mall-demo`，用于跨指标、链路、日志和 RUM 关联。
-- workspace ID：用于 TrueWatch Trace 深链。
-- control token：敏感，只存在 Compose 环境或 Kubernetes Secret，浏览器只保存于当前会话。
+- DataKit provider：非敏感，可选 `guance` 或 `truewatch`，用于页面平台标识和默认控制台域名。
+- workspace ID：用于对应平台的 Trace 深链。
+- 故障注入、恢复和预热接口无需 Demo 控制凭证；只应部署在隔离的演示环境中。
 
 RUM 使用 DataKit Origin，通过同源 `/rum-proxy` 上报，不需要 Public DataWay client token。配置和 SourceMap 步骤见 [RUM、Replay 与 SourceMap](docs/rum-sourcemap.md)；client token 的适用范围见 [官方说明](https://docs.truewatch.com/en/management/client-token/)。
 

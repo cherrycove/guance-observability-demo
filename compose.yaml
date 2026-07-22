@@ -7,10 +7,17 @@ x-java-environment: &java-environment
   PROJECT_TAG: ${PROJECT_TAG:-mall-demo}
   DD_AGENT_HOST: ${DATAKIT_HOST:-host.docker.internal}
   DD_TRACE_AGENT_PORT: "9529"
+  DD_TRACE_AGENT_URL: http://${DATAKIT_HOST:-host.docker.internal}:9529
+  DD_TRACE_ENABLED: "true"
+  DD_TRACE_SAMPLE_RATE: ${DD_TRACE_SAMPLE_RATE:-1.0}
+  DD_TRACE_PROPAGATION_STYLE_EXTRACT: datadog,tracecontext
+  DD_TRACE_PROPAGATION_STYLE_INJECT: datadog,tracecontext
+  DD_RUNTIME_METRICS_ENABLED: "true"
   DD_JMXFETCH_ENABLED: "true"
   DD_JMXFETCH_STATSD_HOST: ${DATAKIT_HOST:-host.docker.internal}
   DD_JMXFETCH_STATSD_PORT: "8125"
   DD_PROFILING_ENABLED: "true"
+  DD_PROFILING_DDPROF_ENABLED: "true"
   DD_LOGS_INJECTION: "true"
   DD_TRACE_HEADER_TAGS: x-key-request:key_request,x-business-request-id:biz_request_id,x-demo-language:language
 
@@ -62,6 +69,8 @@ services:
     environment:
       <<: *java-environment
       DD_SERVICE: inventory-service
+      datakit_logs_config: >-
+        [{"disable":false,"source":"java_selfheal_demo","service":"inventory-service"}]
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       LOGGING_FILE_NAME: /var/log/observability-demo/inventory-service.log
@@ -79,6 +88,8 @@ services:
     environment:
       <<: *java-environment
       DD_SERVICE: payment-service
+      datakit_logs_config: >-
+        [{"disable":false,"source":"java_selfheal_demo","service":"payment-service"}]
       LOGGING_FILE_NAME: /var/log/observability-demo/payment-service.log
     volumes:
       - demo-logs:/var/log/observability-demo
@@ -91,20 +102,22 @@ services:
     environment:
       <<: *java-environment
       DD_SERVICE: order-service
+      datakit_logs_config: >-
+        [{"disable":false,"source":"java_selfheal_demo","service":"order-service"}]
       MYSQL_URL: jdbc:mysql://mysql:3306/selfheal?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC&connectTimeout=3000&socketTimeout=5000
       MYSQL_USER: selfheal
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:?copy .env.example to .env and set MYSQL_PASSWORD}
       INVENTORY_URL: http://inventory-service:8081
       PAYMENT_URL: http://payment-service:8082
       ORDER_URL: http://order-service:8080
-      DEMO_CONTROL_TOKEN: ${DEMO_CONTROL_TOKEN:?copy .env.example to .env and set DEMO_CONTROL_TOKEN}
       KUBERNETES_LOG_READER_ENABLED: "false"
       DEMO_LOG_DIRECTORY: /var/log/observability-demo
       RUM_ENABLED: ${RUM_ENABLED:-false}
       RUM_APPLICATION_ID: ${RUM_APPLICATION_ID:-}
       RUM_SERVICE: mall-h5
       DATAKIT_RUM_URL: http://${DATAKIT_HOST:-host.docker.internal}:9529
-      OBSERVABILITY_CONSOLE_URL: ${OBSERVABILITY_CONSOLE_URL:-https://ap1-console.truewatch.com}
+      DATAKIT_PROVIDER: ${DATAKIT_PROVIDER:-guance}
+      OBSERVABILITY_CONSOLE_URL: ${OBSERVABILITY_CONSOLE_URL:-}
       OBSERVABILITY_WORKSPACE_ID: ${OBSERVABILITY_WORKSPACE_ID:-}
       LOGGING_FILE_NAME: /var/log/observability-demo/order-service.log
     depends_on:
@@ -125,6 +138,8 @@ services:
     environment:
       <<: *java-environment
       DD_SERVICE: gateway-service
+      datakit_logs_config: >-
+        [{"disable":false,"source":"java_selfheal_demo","service":"gateway-service"}]
       ORDER_URL: http://order-service:8080
       LOGGING_FILE_NAME: /var/log/observability-demo/gateway-service.log
     depends_on:

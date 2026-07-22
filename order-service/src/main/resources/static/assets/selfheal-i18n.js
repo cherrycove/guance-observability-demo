@@ -2,6 +2,31 @@
   const DEFAULT_LANGUAGE = 'zh';
   const STORAGE_KEY = 'mall-selfheal-demo-lang';
   const SUPPORTED_LANGUAGES = new Set(['zh', 'en']);
+  const SUPPORTED_THEMES = new Set(['colorful', 'white']);
+  const BOOK_COVER_PALETTES = Object.freeze({
+    colorful: Object.freeze({
+      backgroundStart: '#fff8f3',
+      backgroundEnd: '#fff0f6',
+      accentStart: '#ff7a00',
+      accentMiddle: '#ff3856',
+      accentEnd: '#d730ff',
+      title: '#24152f',
+      label: '#9b3d56',
+      muted: '#684f70',
+      surface: '#fff',
+    }),
+    white: Object.freeze({
+      backgroundStart: '#ffffff',
+      backgroundEnd: '#ffffff',
+      accentStart: '#111111',
+      accentMiddle: '#111111',
+      accentEnd: '#111111',
+      title: '#111111',
+      label: '#111111',
+      muted: '#525252',
+      surface: '#ffffff',
+    }),
+  });
 
   function escapeSvgText(value) {
     return String(value)
@@ -12,61 +37,68 @@
       .replaceAll("'", '&apos;');
   }
 
-  function createBookCoverDataUri({ label, titleLines, titleFontSize, subtitle, footer, accent }) {
+  function createBookCoverDataUri({ label, titleLines, titleFontSize, subtitle, footer, palette }) {
     const title = titleLines
       .map((line, index) => `
-        <text x="28" y="${154 + (index * 54)}" fill="#24152f" font-family="Arial, 'Noto Sans SC', sans-serif" font-size="${titleFontSize}" font-weight="800">${escapeSvgText(line)}</text>
+        <text x="28" y="${154 + (index * 54)}" fill="${palette.title}" font-family="Arial, 'Noto Sans SC', sans-serif" font-size="${titleFontSize}" font-weight="800">${escapeSvgText(line)}</text>
       `)
       .join('');
     const svg = `
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 400" role="img">
         <defs>
           <linearGradient id="cover-bg" x1="18" y1="382" x2="282" y2="18" gradientUnits="userSpaceOnUse">
-            <stop stop-color="#fff8f3"/>
-            <stop offset="1" stop-color="#fff0f6"/>
+            <stop stop-color="${palette.backgroundStart}"/>
+            <stop offset="1" stop-color="${palette.backgroundEnd}"/>
           </linearGradient>
           <linearGradient id="cover-accent" x1="28" y1="0" x2="272" y2="0" gradientUnits="userSpaceOnUse">
-            <stop stop-color="#ff7a00"/>
-            <stop offset="0.5" stop-color="${accent}"/>
-            <stop offset="1" stop-color="#d730ff"/>
+            <stop stop-color="${palette.accentStart}"/>
+            <stop offset="0.5" stop-color="${palette.accentMiddle}"/>
+            <stop offset="1" stop-color="${palette.accentEnd}"/>
           </linearGradient>
         </defs>
         <rect width="300" height="400" rx="18" fill="url(#cover-bg)"/>
         <rect x="14" y="14" width="272" height="372" rx="13" fill="none" stroke="url(#cover-accent)" stroke-width="4"/>
         <rect x="28" y="34" width="244" height="8" rx="4" fill="url(#cover-accent)"/>
-        <text x="28" y="78" fill="#9b3d56" font-family="Arial, sans-serif" font-size="15" font-weight="700" letter-spacing="2">${escapeSvgText(label)}</text>
+        <text x="28" y="78" fill="${palette.label}" font-family="Arial, sans-serif" font-size="15" font-weight="700" letter-spacing="2">${escapeSvgText(label)}</text>
         ${title}
-        <text x="28" y="276" fill="#684f70" font-family="Arial, 'Noto Sans SC', sans-serif" font-size="16">${escapeSvgText(subtitle)}</text>
+        <text x="28" y="276" fill="${palette.muted}" font-family="Arial, 'Noto Sans SC', sans-serif" font-size="16">${escapeSvgText(subtitle)}</text>
         <g transform="translate(28 300)" fill="none" stroke="url(#cover-accent)" stroke-width="4" stroke-linecap="round">
-          <circle cx="12" cy="28" r="8" fill="#fff"/>
-          <circle cx="64" cy="8" r="8" fill="#fff"/>
-          <circle cx="118" cy="34" r="8" fill="#fff"/>
-          <circle cx="180" cy="14" r="8" fill="#fff"/>
+          <circle cx="12" cy="28" r="8" fill="${palette.surface}"/>
+          <circle cx="64" cy="8" r="8" fill="${palette.surface}"/>
+          <circle cx="118" cy="34" r="8" fill="${palette.surface}"/>
+          <circle cx="180" cy="14" r="8" fill="${palette.surface}"/>
           <path d="M20 25 56 11M72 11l38 20M126 31l46-14"/>
         </g>
-        <text x="28" y="365" fill="#9b3d56" font-family="Arial, 'Noto Sans SC', sans-serif" font-size="14" font-weight="700">${escapeSvgText(footer)}</text>
+        <text x="28" y="365" fill="${palette.label}" font-family="Arial, 'Noto Sans SC', sans-serif" font-size="14" font-weight="700">${escapeSvgText(footer)}</text>
       </svg>
     `;
     return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg.replace(/\s+/g, ' ').trim())}`;
   }
 
+  function createThemeBookCovers(palette) {
+    return Object.freeze({
+      zh: createBookCoverDataUri({
+        label: 'MALL DEMO',
+        titleLines: ['可观测性', '工程'],
+        titleFontSize: 38,
+        subtitle: '指标 · 日志 · 链路 · 用户体验',
+        footer: '可观测性实践演示版',
+        palette,
+      }),
+      en: createBookCoverDataUri({
+        label: 'MALL DEMO',
+        titleLines: ['OBSERVABILITY', 'ENGINEERING'],
+        titleFontSize: 28,
+        subtitle: 'Metrics · Logs · Traces · RUM',
+        footer: 'OBSERVABILITY DEMO EDITION',
+        palette,
+      }),
+    });
+  }
+
   const bookCovers = Object.freeze({
-    zh: createBookCoverDataUri({
-      label: 'MALL DEMO',
-      titleLines: ['可观测性', '工程'],
-      titleFontSize: 38,
-      subtitle: '指标 · 日志 · 链路 · 用户体验',
-      footer: '可观测性实践演示版',
-      accent: '#ff3856',
-    }),
-    en: createBookCoverDataUri({
-      label: 'MALL DEMO',
-      titleLines: ['OBSERVABILITY', 'ENGINEERING'],
-      titleFontSize: 28,
-      subtitle: 'Metrics · Logs · Traces · RUM',
-      footer: 'OBSERVABILITY DEMO EDITION',
-      accent: '#ff3856',
-    }),
+    colorful: createThemeBookCovers(BOOK_COVER_PALETTES.colorful),
+    white: createThemeBookCovers(BOOK_COVER_PALETTES.white),
   });
 
   const products = [
@@ -76,7 +108,7 @@
       amountCent: 9900,
       zh: {
         name: '可观测性工程',
-        cover: bookCovers.zh,
+        cover: bookCovers.colorful.zh,
         coverAlt: '《可观测性工程》中文版封面',
         badge: '技术书籍',
         tagline: '从指标、日志、链路、事件到协作流程，系统理解现代可观测性实践。',
@@ -88,7 +120,7 @@
       },
       en: {
         name: 'Observability Engineering',
-        cover: bookCovers.en,
+        cover: bookCovers.colorful.en,
         coverAlt: 'Observability Engineering English book cover',
         badge: 'Technical book',
         tagline: 'A practical guide to modern observability across telemetry, debugging, and team workflows.',
@@ -110,6 +142,9 @@
       commonNormal: '正常',
       commonUnknown: 'UNKNOWN',
       commonNone: 'none',
+      commonTheme: '主题',
+      themeColorful: '绚彩',
+      themeWhite: '黑白线条',
       appTitle: '商城 Demo',
       appSubtitle: '图书商城',
       frameTitle: '商城 Demo',
@@ -197,13 +232,46 @@
       parentShopOrderResult: '商城购买 HTTP {status}：{body}',
       parentFrontendFaultTriggered: '左侧购书操作触发前端故障：{action}',
       parentShopMessageBlocked: '收到非同源商城消息，已忽略。',
-      shopSearchPlaceholder: '搜索书名、作者或主题',
-      shopSearchAction: '购书',
       shopNavLabel: '书城导航',
       shopNavHome: '首页',
-      shopNavCatalog: '图书分类',
-      shopNavTechnology: '技术专区',
-      shopNavPurchases: '购书中心',
+      shopNavBook: '本书',
+      shopNavBag: '购物袋',
+      shopBagCountLabel: '购物袋内有 {count} 本书',
+      shopThemeTrigger: '主题',
+      shopThemeMenuLabel: '选择主题',
+      shopHomeEyebrow: '本周编辑推荐',
+      shopHomeTitle: '理解系统，始于提出更好的问题',
+      shopHomeDescription: '一本写给研发、SRE 与平台团队的可观测性实践指南，从真实用户体验一路读到后端系统行为。',
+      shopHomeViewBook: '查看本书',
+      shopAddToBag: '加入购物袋',
+      shopAddedToBag: '已在购物袋',
+      shopEditorialTitle: '为什么值得读',
+      shopEditorialDescription: '从概念到日常实践，建立一套能够解释复杂系统的共同语言。',
+      shopFeaturePracticeTitle: '面向真实实践',
+      shopFeaturePracticeDescription: '连接指标、日志、链路、事件与团队协作，而不止停留在工具清单。',
+      shopFeatureDebugTitle: '改进调试方式',
+      shopFeatureDebugDescription: '从未知问题出发，学习如何提出问题、缩小范围并验证判断。',
+      shopFeatureTeamTitle: '适合技术团队',
+      shopFeatureTeamDescription: '为研发、SRE 和平台团队提供可以共同讨论的系统视角。',
+      shopDetailPageTitle: '图书详情',
+      shopDetailOverview: '内容简介',
+      shopDetailHighlights: '本书亮点',
+      shopDetailBuy: '立即购买',
+      shopBagTitle: '购物袋',
+      shopBagDescription: '确认选中的图书与金额，然后完成购买。',
+      shopBagEmptyTitle: '购物袋还是空的',
+      shopBagEmptyDescription: '先去看看本周推荐，把想读的书放进购物袋。',
+      shopBagBrowse: '去看本书',
+      shopBagRemove: '移除',
+      shopBagQuantity: '数量 1',
+      shopOrderSummary: '订单汇总',
+      shopSubtotal: '商品小计',
+      shopDemoActionsTitle: '演示操作',
+      shopDemoActionsDescription: '用于一次生成多条观测链路，不影响正常购买流程。',
+      shopCartAddedTitle: '已加入购物袋',
+      shopCartAddedDetail: '《{product}》已放入购物袋。',
+      shopCartRemovedTitle: '已移出购物袋',
+      shopCartRemovedDetail: '可以随时重新加入这本书。',
       shopHeroTitle: '商城 Demo',
       shopHeroText: '选择《可观测性工程》并完成购买，会生成关键业务请求，并把 RUM Action、Resource、Error 与后端 APM/日志串起来。',
       shopProductSection: '精选图书',
@@ -277,6 +345,9 @@
       commonNormal: 'Normal',
       commonUnknown: 'UNKNOWN',
       commonNone: 'none',
+      commonTheme: 'Theme',
+      themeColorful: 'Colorful',
+      themeWhite: 'Black & white',
       appTitle: 'Store Demo',
       appSubtitle: 'Bookstore',
       frameTitle: 'Store Demo',
@@ -364,13 +435,46 @@
       parentShopOrderResult: 'Store purchase HTTP {status}: {body}',
       parentFrontendFaultTriggered: 'Store purchase action triggered frontend fault: {action}',
       parentShopMessageBlocked: 'Ignored a non-same-origin store message.',
-      shopSearchPlaceholder: 'Search title, author, or topic',
-      shopSearchAction: 'Buy',
       shopNavLabel: 'Bookstore navigation',
       shopNavHome: 'Home',
-      shopNavCatalog: 'Books',
-      shopNavTechnology: 'Technology',
-      shopNavPurchases: 'Purchases',
+      shopNavBook: 'This Book',
+      shopNavBag: 'Shopping Bag',
+      shopBagCountLabel: '{count} book in the shopping bag',
+      shopThemeTrigger: 'Theme',
+      shopThemeMenuLabel: 'Choose theme',
+      shopHomeEyebrow: 'Editors’ Pick',
+      shopHomeTitle: 'Understand systems by asking better questions',
+      shopHomeDescription: 'A practical observability guide for engineers, SREs, and platform teams, connecting real user experience to backend system behavior.',
+      shopHomeViewBook: 'View this book',
+      shopAddToBag: 'Add to bag',
+      shopAddedToBag: 'In your bag',
+      shopEditorialTitle: 'Why it is worth reading',
+      shopEditorialDescription: 'Build a shared language for understanding complex systems, from core ideas to daily practice.',
+      shopFeaturePracticeTitle: 'Grounded in practice',
+      shopFeaturePracticeDescription: 'Connect metrics, logs, traces, events, and teamwork instead of stopping at a tool list.',
+      shopFeatureDebugTitle: 'Debug differently',
+      shopFeatureDebugDescription: 'Start from unknowns, ask useful questions, narrow the search, and validate conclusions.',
+      shopFeatureTeamTitle: 'Built for teams',
+      shopFeatureTeamDescription: 'Give engineers, SREs, and platform teams a common view of system behavior.',
+      shopDetailPageTitle: 'Book Details',
+      shopDetailOverview: 'Overview',
+      shopDetailHighlights: 'Highlights',
+      shopDetailBuy: 'Buy now',
+      shopBagTitle: 'Shopping Bag',
+      shopBagDescription: 'Review your selected book and total, then complete the purchase.',
+      shopBagEmptyTitle: 'Your bag is empty',
+      shopBagEmptyDescription: 'Explore this week’s pick and add the book you want to read.',
+      shopBagBrowse: 'View this book',
+      shopBagRemove: 'Remove',
+      shopBagQuantity: 'Quantity 1',
+      shopOrderSummary: 'Order summary',
+      shopSubtotal: 'Subtotal',
+      shopDemoActionsTitle: 'Demo actions',
+      shopDemoActionsDescription: 'Generate several observability traces at once without changing the normal purchase flow.',
+      shopCartAddedTitle: 'Added to your bag',
+      shopCartAddedDetail: '"{product}" is now in your shopping bag.',
+      shopCartRemovedTitle: 'Removed from your bag',
+      shopCartRemovedDetail: 'You can add this book again at any time.',
       shopHeroTitle: 'Store Demo',
       shopHeroText: 'Choose Observability Engineering and purchase it to create a key business request linking RUM Action, Resource, Error with backend APM and logs.',
       shopProductSection: 'Featured Book',
@@ -581,9 +685,12 @@
     return interpolate(table[key] || messages[DEFAULT_LANGUAGE][key] || key, params || {});
   }
 
-  function getProductText(product, language) {
+  function getProductText(product, language, theme) {
     const lang = normalizeLanguage(language || currentLanguage);
-    return product[lang] || product[DEFAULT_LANGUAGE];
+    const text = product[lang] || product[DEFAULT_LANGUAGE];
+    const normalizedTheme = SUPPORTED_THEMES.has(theme) ? theme : 'colorful';
+    const themedCover = bookCovers[normalizedTheme]?.[lang] || bookCovers.colorful[lang];
+    return themedCover ? { ...text, cover: themedCover } : text;
   }
 
   function productBySku(sku) {
@@ -649,7 +756,7 @@
     try {
       const url = new URL(window.location.href);
       url.searchParams.set('lang', language);
-      window.history.replaceState({}, '', url);
+      window.history.replaceState(window.history.state || {}, '', url);
     } catch (_) {
       // Some embedded contexts may not allow history changes.
     }

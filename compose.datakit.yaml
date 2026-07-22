@@ -1,0 +1,27 @@
+# Attach the Java services to an existing Docker-based DataKit instance.
+# The DataKit container must already be connected to DATAKIT_DOCKER_NETWORK.
+services:
+  inventory-service:
+    networks:
+      - default
+      - datakit
+
+  payment-service:
+    networks:
+      - default
+      - datakit
+
+  order-service:
+    networks:
+      - default
+      - datakit
+
+  gateway-service:
+    networks:
+      - default
+      - datakit
+
+networks:
+  datakit:
+    name: ${DATAKIT_DOCKER_NETWORK:-datakit-demo-net}
+    external: true
