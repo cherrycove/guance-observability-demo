@@ -216,6 +216,7 @@ class DemoController {
     response.put("env", rumEnv);
     response.put("version", rumVersion);
     response.put("project", project);
+    response.put("datakitProvider", datakitProvider);
     response.put("traceType", "ddtrace");
     response.put("compressIntakeRequests", true);
     response.put("sessionSampleRate", 100);

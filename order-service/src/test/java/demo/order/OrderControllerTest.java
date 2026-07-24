@@ -181,12 +181,33 @@ class OrderControllerTest {
         .andExpect(jsonPath("$.version").value("v1.2.3"))
         .andExpect(jsonPath("$.service").value("business-web"))
         .andExpect(jsonPath("$.project").value("mall-demo"))
+        .andExpect(jsonPath("$.datakitProvider").value("guance"))
         .andExpect(jsonPath("$.applicationId").value("order_web_docker_demo"))
         .andExpect(jsonPath("$.enabled").value(true))
         .andExpect(jsonPath("$.clientToken").doesNotExist())
         .andExpect(jsonPath("$.site").doesNotExist())
         .andExpect(jsonPath("$.datakitOrigin").value("/rum-proxy"))
         .andExpect(jsonPath("$.baggageKeys[0]").value("project"));
+  }
+
+  @Test
+  void rumConfigIncludesTrueWatchProvider() throws Exception {
+    MockMvc trueWatchMvc =
+        MockMvcBuilders.standaloneSetup(
+                newDemoController(
+                    new RestTemplate(),
+                    "test",
+                    "1.0.0",
+                    "mall-h5",
+                    "truewatch",
+                    "",
+                    "workspace-demo"))
+            .build();
+
+    trueWatchMvc
+        .perform(get("/api/demo/rum-config"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.datakitProvider").value("truewatch"));
   }
 
   @Test
@@ -243,6 +264,12 @@ class OrderControllerTest {
         .contains("id=\"submitBtn\"")
         .contains("id=\"trafficBtn\"")
         .contains("id=\"phoneToast\"")
+        .contains("const BROWSER_SESSION_PERSISTENCE = 'local-storage'")
+        .contains("guance: 'https://static.guance.com'")
+        .contains("truewatch: 'https://static.truewatch.com'")
+        .contains("await ensureBrowserSdks(body.datakitProvider)")
+        .contains("RUM session was not created")
+        .contains("console.info('[RUM] initialized'")
         .contains("data-demo-theme=\"colorful\"")
         .contains("data-demo-theme=\"white\"")
         .contains("window.history.back()")
@@ -254,7 +281,10 @@ class OrderControllerTest {
         .doesNotContain("data-store-route=\"categories\"")
         .doesNotContain("data-store-route=\"technology\"")
         .doesNotContain("class=\"search\"")
-        .doesNotContain("category-card");
+        .doesNotContain("category-card")
+        .doesNotContain("<script src=\"https://static.truewatch.com/browser-sdk/v3/dataflux-rum.js");
+    assertThat(shopSource.split("sessionPersistence: BROWSER_SESSION_PERSISTENCE", -1))
+        .hasSize(3);
 
     assertThat(storefrontStyles)
         .contains("background: #fff2f0")
@@ -272,7 +302,7 @@ class OrderControllerTest {
         .doesNotContain(".storefront .page-back");
 
     assertThat(businessSource)
-        .contains("20260722-storefront-v29")
+        .contains("const SHOP_BUILD_ID = '20260724-rum-iframe-v30'")
         .contains(".preview-stage[data-view=\"mobile\"] .phone-statusbar")
         .contains("background: #ffffff;");
   }

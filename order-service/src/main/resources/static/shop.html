@@ -22,8 +22,6 @@
       document.documentElement.dataset.demoTheme = supportedThemes.has(demoTheme) ? demoTheme : 'colorful';
     })();
   </script>
-  <script src="https://static.truewatch.com/browser-sdk/v3/dataflux-rum.js"></script>
-  <script src="https://static.truewatch.com/browser-sdk/v3/dataflux-logs.js"></script>
   <script src="assets/checkout-sourcemap-fault.min.js?v=20260703-trace-link-v4"></script>
   <script src="assets/selfheal-i18n.js?v=20260722-storefront-v29"></script>
   <link rel="stylesheet" href="assets/storefront.css?v=20260722-storefront-v29" />
@@ -213,6 +211,11 @@
     const SWIPE_BACK_MIN_DISTANCE = 72;
     const SWIPE_BACK_MAX_VERTICAL_DISTANCE = 48;
     const SWIPE_BACK_MAX_DURATION_MS = 700;
+    const BROWSER_SESSION_PERSISTENCE = 'local-storage';
+    const BROWSER_SDK_ORIGINS = Object.freeze({
+      guance: 'https://static.guance.com',
+      truewatch: 'https://static.truewatch.com',
+    });
     const initialPreviewParams = new URL(window.location.href).searchParams;
     const state = {
       selectedSku: I18N.products[0].sku,
@@ -903,6 +906,56 @@
       }
     }
 
+    function loadBrowserSdk(origin, fileName, globalName) {
+      if (window[globalName]) return Promise.resolve();
+      const src = `${origin}/browser-sdk/v3/${fileName}`;
+      return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.async = true;
+        script.addEventListener('load', () => {
+          if (window[globalName]) {
+            resolve();
+            return;
+          }
+          reject(new Error(`${globalName} is unavailable after loading ${src}`));
+        }, { once: true });
+        script.addEventListener('error', () => {
+          reject(new Error(`Failed to load ${src}`));
+        }, { once: true });
+        document.head.appendChild(script);
+      });
+    }
+
+    async function ensureBrowserSdks(provider) {
+      const normalizedProvider = provider === 'truewatch' ? 'truewatch' : 'guance';
+      const origin = BROWSER_SDK_ORIGINS[normalizedProvider];
+      await loadBrowserSdk(origin, 'dataflux-rum.js', 'DATAFLUX_RUM');
+      try {
+        await loadBrowserSdk(origin, 'dataflux-logs.js', 'DATAFLUX_LOGS');
+      } catch (error) {
+        console.warn('[Browser Logs] SDK loading failed', {
+          provider: normalizedProvider,
+          message: error.message,
+        });
+      }
+      console.info('[RUM] browser SDK loaded', {
+        provider: normalizedProvider,
+        origin,
+      });
+    }
+
+    async function waitForRumSession(timeoutMs = 1500) {
+      if (!window.DATAFLUX_RUM?.getInternalContext) return null;
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        const context = window.DATAFLUX_RUM.getInternalContext();
+        if (context?.session_id) return context;
+        await new Promise((resolve) => window.setTimeout(resolve, 50));
+      }
+      return null;
+    }
+
     function initBrowserLogs(config) {
       if (!window.DATAFLUX_LOGS) {
         state.browserLogsReady = false;
@@ -915,6 +968,7 @@
           env: config.env || 'test',
           version: config.version || '1.0.0',
           sessionSampleRate: 100,
+          sessionPersistence: BROWSER_SESSION_PERSISTENCE,
           forwardErrorsToLogs: true,
         });
         if (window.DATAFLUX_LOGS.setGlobalContextProperty) {
@@ -929,8 +983,9 @@
         }
         state.browserLogsReady = true;
         applyPreviewObservabilityContext();
-      } catch (_) {
+      } catch (error) {
         state.browserLogsReady = false;
+        console.error('[Browser Logs] initialization failed', error);
       }
     }
 
@@ -943,6 +998,7 @@
           postToParent('rum-status', { status: 'disabled' });
           return;
         }
+        await ensureBrowserSdks(body.datakitProvider);
         initBrowserLogs(body);
         if (!window.DATAFLUX_RUM) {
           postToParent('rum-status', { status: 'missing' });
@@ -960,6 +1016,7 @@
           sessionSampleRate: body.sessionSampleRate ?? 100,
           sessionReplaySampleRate: body.sessionReplaySampleRate ?? 100,
           sessionReplayOnErrorSampleRate: body.sessionReplayOnErrorSampleRate ?? 100,
+          sessionPersistence: BROWSER_SESSION_PERSISTENCE,
           compressIntakeRequests: body.compressIntakeRequests !== false,
           trackInteractions: true,
           trackResources: true,
@@ -968,6 +1025,10 @@
           allowedTracingOrigins: [window.location.origin],
           beforeSend: enrichRumEvent,
         });
+        const rumContext = await waitForRumSession();
+        if (window.DATAFLUX_RUM.getInternalContext && !rumContext?.session_id) {
+          throw new Error('RUM session was not created');
+        }
         if (window.DATAFLUX_RUM.setGlobalContextProperty) {
           window.DATAFLUX_RUM.setGlobalContextProperty('project', PROJECT_NAME);
           window.DATAFLUX_RUM.setGlobalContextProperty('env', body.env || 'test');
@@ -981,6 +1042,12 @@
         }
         state.rumReady = true;
         applyPreviewObservabilityContext();
+        console.info('[RUM] initialized', {
+          service,
+          env: body.env || 'test',
+          version: body.version || '1.0.0',
+          sessionId: rumContext?.session_id || 'unavailable',
+        });
         postToParent('rum-status', { status: 'ready', service, env: body.env || 'test', version: body.version || '1.0.0' });
         log(t('shopLogRumInit', { service, env: body.env || 'test', version: body.version || '1.0.0' }), {
           status: 'success',
@@ -992,6 +1059,8 @@
           },
         });
       } catch (error) {
+        state.rumReady = false;
+        console.error('[RUM] initialization failed', error);
         postToParent('rum-status', { status: 'failed', message: error.message });
         log(t('shopLogRumFailed', { message: error.message }), {
           status: 'error',
